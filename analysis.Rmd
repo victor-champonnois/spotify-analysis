@@ -1,0 +1,260 @@
+---
+title: "Analyse des donnée Spotify"
+output:
+  html_document:
+    df_print: paged
+---
+Todo:
+- utiliser l'api spotify pour chercher plus d'infos sur la chanson (genre, genre parent, etc.)
+- croiser les données avec d'autres base de donnée (musicbrain, discogs...) 
+- ventiler les résultats par genre
+- se concentrer sur un genre/artiste pour ne pas se perdre ?
+
+```{r echo=FALSE, eval=TRUE}
+library(tidyr)
+library(dplyr)
+library(lubridate)
+library(parsedate)
+library(ggplot2)
+```
+
+Ressources :
+- base de donnée : https://www.kaggle.com/datasets/yamaerenay/spotify-dataset-19212020-600k-tracks?select=tracks.csv
+- documentation de spotify sur les variables <https://developer.spotify.com/documentation/web-api/reference/get-audio-features>
+
+```{r echo=FALSE, eval=TRUE}
+knitr::opts_chunk$set(echo = TRUE, fig.width = 7, fig.height = 4)
+library(tidyr)
+library(dplyr)
+library(lubridate)
+library(parsedate)
+library(ggplot2)
+data_origin = read.csv("data/tracks.csv")
+data = tibble(data_origin)
+```
+
+
+# Description et formattage des données
+
+```{r}
+# summary(data)
+```
+
+
+On formatte les données en appliquant les opérations suivantes :
+
+- on garde uniquement les années dans les date de publication des chansons
+- on les discrétise en périodes de 5 ans afin de lisser les données et d'éviter de trop grandes variations dans les graphiques
+- on convertit la durée des chansons en minutes
+
+On remarque dans le summary des données que les colonnes Tempo, Date et Popularité ont des valeurs manquantes. On supprime simplement ces valeurs sans trop s'inquiéter à des biais liés aux valeurs manquantes, cela pourrait éventuellement faire l'objet d'une analyse plus détaillée. 
+
+```{r echo=TRUE}
+#grouping dates
+data = data %>% 
+  mutate(release_date = as.numeric(substr(as.character(release_date), 1, 4)))
+date_break_list = seq(1920,2020,5)
+data = data %>% 
+  mutate(release_date = 
+           cut(release_date, breaks=date_break_list))
+
+# grouping tempo 
+tempo_break_list = seq(50,180,10)
+data = data %>% 
+  mutate(tempo_group = 
+           cut(tempo, breaks=tempo_break_list))
+
+# grouping popularity
+popularity_break_list = seq(0,100,10)
+data = data %>% 
+  mutate(popularity_group = 
+           cut(popularity, breaks=popularity_break_list))
+
+# format duration as minutes
+data = data %>% 
+  mutate(duration = duration_ms/60000)
+
+# mode as binary variable
+data = data %>% 
+  mutate(mode_binary = mode>0.5)
+
+
+# key : integer to factor
+data$key = factor(data$key, labels=c("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"))
+```
+
+
+# Évolution de la durée moyenne des chansons
+
+On commence par calculer la durée moyenne des chansons au cours du temps.
+
+On voit que la durée a globalement augmenté, d'environ 2 minutes et demi en moyenne en 1925 vers plus de 4 minutes en 2000.
+
+On note toutefois beaucoup de variation dans la durée moyenne. Ces variations semblent explicable par la sortie de nouveaux supports de stockage de la musique. On annote le graphique avec les dates d'introduction des nouveaux supports de musique et mode de consommation (vynil, cassette, CD et streaming). On observe que l'apparition de nouveaux supports explique clairement ces variations. Par exemple, le racourcissement des chansons dans les années 50 est probablement dû au besoin de les stocker sur le support vynil, apparu en 1948. Le vinyl 33 tours, soit 40 minute à une heure de musique. En 1963 sort la cassette audio, qui, en plus de pouvoir être réenregistrable, permet aussi un stockage plus important, entre une heure et deux heures de musique. Le CD apparaît en 1982, mais il ne permet pas de stocker beaucoup plus de musique que la cassette. Cependant, on peut avoir deux disques par boite (un double album), ce qui a peut-être permis d'allonger encore la durée de musique disponible. On observe donc une légère hausse, puis une stagnation, notamment dans les années 2000, où la musique se télécharge de plus en plus sur internet, grace au format MP3 et à la massification de l'accès domestique à internet. En 2011, la plateforme Spotify est "live", avec un modèle économique qui paye les artistes sur le nombre d'écoute. Cela incite à produire des chansons toujours plus courtes, et on observe la fameuse "mort du troisième couplet", en 2020, la durée moyenn d'une chanson est en dessous des trois minutes et demi.
+
+source sur les supports physiques : https://www.son-video.com/guide/l-evolution-du-support-physique-dans-l-industrie-de-la-musique
+https://en.wikipedia.org/wiki/Spotify
+https://fr.wikipedia.org/wiki/Cassette_audio
+https://en.wikipedia.org/wiki/Compact_disc
+https://en.wikipedia.org/wiki/MP3
+
+```{r eval=TRUE, echo=FALSE}
+# average duration by year
+data  %>% 
+  group_by(release_date) %>% 
+  summarize(mean_duration = mean(duration)) %>% 
+  ggplot() + aes(x=release_date, y=mean_duration,group=1) + geom_step() +
+  geom_vline(xintercept=6.5, colour="darkred") +
+  geom_vline(xintercept=9.5, colour="darkgreen") +
+  geom_vline(xintercept=13.25, colour="darkblue") +
+  geom_vline(xintercept=17,  colour="darkorange") +
+  geom_vline(xintercept=19.2, linetype=1, colour="darkviolet") +
+  geom_text(x=5.8, y=3.1, label="Vinyl", colour = "darkred",  size=3) +
+  geom_text(x=8.5, y=3.1, label="Cassette", colour = "darkgreen",  size=3) +
+  geom_text(x=12.8, y=3.1, label="CD", colour = "darkblue",  size=3) +
+  geom_text(x=16.1, y=3.1, label="Internet", colour = "darkorange",  size=3) +
+  geom_text(x=18.1, y=3.1, label="Streaming", colour = "darkviolet",  size=3) +
+  theme(axis.text.x = element_text(angle = 45)) + scale_x_discrete(labels=date_break_list) +
+  labs(title = "La durée des chansons a tendance à augmenter, jusqu'à récemment",
+    subtitle = "Durée moyenne (en minutes) par période",
+    x ="Année",
+    y = "Durée") 
+```
+
+# Évolution des signatures rythmiques
+
+Nous analysons maintenant la fréquence des différentes signatures rythmiques. On remarque que même si le 4 temps à toujours largement dominé, les tempos impairs ont diminués progressivements pendant 100 ans. On peut expliquer le déclin du 3 temps par celui de la valse et de la musique classique. Mais comment expliquer le déclin du 5 temps ? Il semblait correspondre à environ 5% des chansons jusqu'en 1950/1955. Il serait intéressant d'avoir une décomposition par genre.
+
+```{r eval=TRUE, echo=FALSE}
+# time signature by decade
+data  %>% 
+  mutate(time_signature = as.character(time_signature)) %>% 
+  group_by(release_date) %>% 
+  ggplot() + aes(x=release_date, fill=time_signature) + 
+  geom_bar(position="fill") +
+  theme(axis.text.x = element_text(angle = 45)) +
+  scale_x_discrete(labels=date_break_list) +
+  labs(title = "Le quatre temps est devenu la signature rythmique dominante", 
+       subtitle = "Fréquence des signatures rythmiques par période",
+       x ="Année",
+       y = "Fréquence",
+       fill = "Signature rythmique")
+```
+
+# Évolution du tempo
+
+La variation du tempo a aussi vu une augmentation continue, alors qu'elle oscille beaucoup dans les années 20 et 30, elle passe en dessous des 110 en 1940 pour augmenter rapidement vers une moyenne à presque 120 en 75. La hausse ralentit mais atteint 123 BPM en moyenne en 2015, puis commence aussi à diminuer.
+
+```{r eval=TRUE}
+# average tempo by year
+data  %>% 
+  group_by(release_date) %>% 
+  summarize(mean_tempo = mean(tempo)) %>%
+  ggplot() + aes(x=release_date, y=mean_tempo,group=1) + geom_step() +
+    theme(axis.text.x = element_text(angle = 45)) + scale_x_discrete(labels=date_break_list) +
+    labs(title = "Le tempo des chansons a sans cesse augmenté depuis 1945", 
+       subtitle = "Tempo moyen (en BPM) par période",
+       x ="Année",
+       y = "Tempo")
+
+```
+
+# Évolution de la popularité
+
+```{r eval=TRUE}
+# average tempo by year
+data  %>% 
+  group_by(release_date) %>% 
+  summarize(mean_popularity = mean(popularity)) %>% 
+  ggplot() + aes(x=release_date, y=mean_popularity,group=1) + geom_step() +
+    theme(axis.text.x = element_text(angle = 45)) + scale_x_discrete(labels=date_break_list) +
+    labs(title = "Les chansons plus récentes sont plus populaires", 
+       subtitle = "Score moyen de popularité (de 0 à 100) par période",
+       x ="Année",
+       y = "Score de popularité")
+```
+# Analyse mode majeur et mineur
+
+
+## Evolution dans le temps
+
+```{r eval=TRUE}
+data  %>% 
+  group_by(release_date) %>% 
+  summarize(mean_mode = mean(mode)) %>% 
+  drop_na() %>% 
+  ggplot() + aes(x=release_date, y=mean_mode,group=1) + geom_step() +
+    theme(axis.text.x = element_text(angle = 45)) + scale_x_discrete(labels=date_break_list) +
+    labs(title = "La proportion de chansons majeure ne cesse de diminuer", 
+       subtitle = "Part moyenne de chansons majeure par période",
+       x ="Année",
+       y = "Part de chansons majeures")
+```
+
+Même si les chansons en mode majeur sont toujours majoritaires, leur prévalence diminue au cours du temps. Entre 1920 et 1935, elles semblent avoir diminué, puis il y a un long plateau jusqu'en 1970, puis la part de chansons en majeur diminue sans cesse jusqu'à une grande baisse en 2015, amenant la part des chansons majeur à moins de 60%. 
+
+```{r eval=TRUE}
+data  %>% 
+  group_by(tempo_group) %>% 
+  summarize(mean_mode = mean(mode)) %>% 
+  ggplot() + aes(x=tempo_group, y=mean_mode,group=1) + geom_step() +
+    theme(axis.text.x = element_text(angle = 45)) +     scale_x_discrete(labels=tempo_break_list) +
+    labs(title = "Pas de relation claire entre le tempo et le mode majeure", 
+       subtitle = "Part moyenne de chansons majeure par tempo",
+       x ="Tempo",
+       y = "Part de chansons majeures")
+```
+On a l'intuition que des tempos plus élevés sont associés à des modes majeurs (car les chansons tristes seront souvent mineures et souvent plus lentes).Cependant les données montrent une relation plus complexes.
+Les chansons de tempo entre 60 et 80 ont plus tendance à être majeures que les autres. C'est seulement à partir des tempos à 90 que l'on observe ensuite une corrélation positive entre tempo et mode majeur. De plus la progression n'est pas constante. 
+
+Pourtant on a vu que le tempo avait aussi augmenté dans le temps, on a donc envie de faire une analyse trivariées mode/tempo/temps. On a créé une variable binaire `mode_binary` qui est égale à 1 si la prédiction du mode est supérieur à 0.5 et 0 sinon.
+
+
+```{r}
+data  %>% 
+  group_by(release_date, mode_binary) %>% 
+  summarize(mean_tempo = mean(tempo)) %>%
+  ggplot() + aes(x=release_date, y=mean_tempo, group=mode_binary, color=mode_binary) + geom_step() +
+    theme(axis.text.x = element_text(angle = 45)) + scale_x_discrete(labels=date_break_list) +
+    labs(title = "Le tempo des chansons a sans cesse augmenté depuis 1945", 
+       subtitle = "Tempo moyen (en BPM) par période",
+       x ="Année",
+       y = "Tempo")
+```
+
+L'évolution au cours du temps semble la même. Le tempo et le mode sont donc peut-être deux variables indépendantes qui ont tous les deux suivis la même évolution au cours du temps ?
+
+```{r}
+data %>% group_by(popularity_group) %>% summarise(mean_mode = mean(mode)) %>%
+  ggplot() + aes(x=popularity_group, y = mean_mode, group=1) + geom_step() + 
+      theme(axis.text.x = element_text(angle = 45)) +     scale_x_discrete(labels=popularity_break_list) +
+    labs(title = "Les chansons mineures sont plus populaires", 
+       subtitle = "Part moyenne de chansons majeure par popularité",
+       x ="Popularité",
+       y = "Part de chansons majeures")
+```
+Il semble y avoir une corrélation entre la popularité d'une chanson et le mode mineur. Cependant, il y a un pic de mode majeur parmi les chansons les plus populaire (score > 90).
+
+Cela pose question sur la nature des données qui appartiennent à cette catégorie. Est-ce que sont des outliers ? Ou bien est-ce que ces chansons portent bien une caractéristiques communes ?
+
+Regardons déjà le nombre de chanson dans cette catégorie. 
+
+```{r}
+summary(data$popularity)
+```
+Il y en a seulement 22 dans cet cas. Faisons une liste.
+```{r}
+data %>% filter(popularity_group == "(90,100]") %>% select(name,artists)
+```
+Il y a quelques Artistes connus, mais je ne reconnais pas beaucoup de chansons (peut-être que je suis trop vieux ?). J'aurai tendance à vouloir les traiter comme outlier. 
+
+# Annexes : résultats supplémentaires
+
+
+## Lien entre la clé du morceau et le mode. 
+
+```{r}
+data %>% group_by(key) %>% 
+  summarize(mean_mode=mean(mode)) %>% 
+  ggplot() + aes(x=key,y=mean_mode) + geom_col(stats="identity")
+```

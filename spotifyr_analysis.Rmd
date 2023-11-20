@@ -1,0 +1,13 @@
+---
+title: "Spotifyr"
+output: html_document
+date: "2023-11-19"
+---
+
+```{r setup, include=FALSE}
+# https://github.com/charlie86/spotifyr#readme
+library(spotifyr)
+access_token <- get_spotify_access_token()
+
+summary(get_playlist_tracks("1gQEbt2sNFNUZBLlXGJXna"))
+```
